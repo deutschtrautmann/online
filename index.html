@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wörter richtig ordnen – Pro</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    padding: 15px;
+    background: linear-gradient(to bottom, #eef7ff, #ffffff);
+}
+
+/* Buttons */
+button {
+    font-size: 16px;
+    padding: 8px 14px;
+    margin: 5px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+button:nth-of-type(1){background:#4CAF50;color:white;}
+button:nth-of-type(2){background:#ff9800;color:white;}
+button:nth-of-type(3){background:#2196F3;color:white;}
+
+.container {
+    min-height: 70px;
+    padding: 15px;
+    margin-top: 10px;
+    border-radius: 15px;
+    border: 3px dashed #ccc;
+}
+
+.pool { background:#e3f2fd; }
+.answer { background:#fff3e0; }
+
+.word {
+    display:inline-block;
+    padding:12px 16px;
+    margin:6px;
+    background:white;
+    border-radius:12px;
+    cursor:grab;
+    touch-action:none;
+    box-shadow:0 2px 6px rgba(0,0,0,0.2);
+    transition:transform 0.1s;
+}
+
+.word.snap { transform:scale(1.2); }
+
+.correct { border:3px solid green !important; }
+.wrong { border:3px solid red !important; }
+
+#message { margin-top:10px;font-weight:bold; }
+
+/* Fortschritt */
+#progressBar {
+    width:100%;
+    height:15px;
+    background:#ddd;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:10px;
+}
+
+#progressFill {
+    height:100%;
+    width:0%;
+    background:#4CAF50;
+}
+
+/* Einfügelinie */
+.marker {
+    width:3px;
+    height:40px;
+    background:red;
+    position:absolute;
+    pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Wörter richtig ordnen</h2>
+
+<input type="file" id="fileInput" accept=".txt">
+<button onclick="checkCurrent()">Prüfen</button>
+<button onclick="resetGame()">Nochmal</button>
+<button onclick="showSolution()">Lösung</button>
+
+<div id="progressText"></div>
+<div id="progressBar"><div id="progressFill"></div></div>
+
+<div id="game"></div>
+<div id="message"></div>
+
+<script>
+let sentences=[];
+let currentIndex=0;
+let dragged=null;
+let audioCtx=null;
+
+function initAudio(){
+ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+}
+
+function beep(freq,dur){
+ initAudio();
+ const o=audioCtx.createOscillator();
+ const g=audioCtx.createGain();
+ o.frequency.value=freq;
+ g.gain.value=0.2;
+ o.connect(g);g.connect(audioCtx.destination);
+ o.start();
+ o.stop(audioCtx.currentTime+dur);
+}
+
+function playClick(){beep(400,0.1);}
+function playCorrect(){beep(600,0.3);}
+function playWrong(){beep(150,0.4);}
+
+document.getElementById('fileInput').addEventListener('change',e=>{
+ const file=e.target.files[0];
+ const r=new FileReader();
+ r.onload=ev=>{
+  sentences=ev.target.result.split("\n").filter(l=>l.trim());
+  currentIndex=0;
+  showSentence();
+ };
+ r.readAsText(file);
+});
+
+function shuffle(a){return a.sort(()=>Math.random()-0.5);}
+
+function updateProgress(){
+ document.getElementById("progressText").innerText=
+   "Satz "+(currentIndex+1)+" von "+sentences.length;
+ document.getElementById("progressFill").style.width=
+   ((currentIndex)/sentences.length*100)+"%";
+}
+
+function showSentence(){
+ const game=document.getElementById("game");
+ const msg=document.getElementById("message");
+
+ game.innerHTML="";
+ msg.innerText="";
+
+ if(currentIndex>=sentences.length){
+  msg.innerText="Alle Sätze richtig!";
+  return;
+ }
+
+ updateProgress();
+
+ const s=sentences[currentIndex];
+ const words=shuffle([...s.split(" ")]);
+
+ const pool=createZone("pool");
+ words.forEach(w=>pool.appendChild(createWord(w)));
+
+ const answer=createZone("answer");
+ answer.dataset.correct=s;
+
+ game.append("Wörter:",pool,document.createElement("br"),"Satz:",answer);
+}
+
+function createWord(t){
+ const el=document.createElement("span");
+ el.className="word";
+ el.innerText=t;
+
+ el.draggable=true;
+ el.addEventListener("dragstart",()=>dragged=el);
+
+ el.addEventListener("touchstart",()=>{
+  dragged=el;
+  el.style.opacity="0.5";
+ });
+
+ el.addEventListener("touchend",()=>el.style.opacity="1");
+
+ return el;
+}
+
+function insertAtPosition(zone,x){
+ const words=[...zone.querySelectorAll(".word")];
+
+ for(let w of words){
+  const r=w.getBoundingClientRect();
+  if(x<r.left+r.width/2){
+   zone.insertBefore(dragged,w);
+   snap(dragged);
+   return;
+  }
+ }
+ zone.appendChild(dragged);
+ snap(dragged);
+}
+
+function snap(el){
+ el.classList.add("snap");
+ setTimeout(()=>el.classList.remove("snap"),150);
+}
+
+function createZone(type){
+ const z=document.createElement("div");
+ z.className="container "+type;
+
+ z.addEventListener("dragover",e=>e.preventDefault());
+
+ z.addEventListener("drop",e=>{
+  e.preventDefault();
+  insertAtPosition(z,e.clientX);
+  playClick();
+  dragged=null;
+ });
+
+ z.addEventListener("touchend",e=>{
+  const t=e.changedTouches[0];
+  insertAtPosition(z,t.clientX);
+  playClick();
+  dragged=null;
+ });
+
+ return z;
+}
+
+function normalize(t){
+ return t.replace(/\r/g,"").replace(/[.,!?]/g,"")
+ .replace(/\s+/g," ").trim().toLowerCase();
+}
+
+function checkCurrent(){
+ const a=document.querySelector("[data-correct]");
+ const msg=document.getElementById("message");
+
+ const user=normalize([...a.children].map(e=>e.innerText).join(" "));
+ const correct=normalize(a.dataset.correct);
+
+ if(user===correct){
+  a.classList.add("correct");
+  msg.innerText="Richtig!";
+  playCorrect();
+  setTimeout(()=>{currentIndex++;showSentence();},800);
+ }else{
+  a.classList.add("wrong");
+  msg.innerText="Versuch es noch einmal.";
+  playWrong();
+ }
+}
+
+function showSolution(){
+ const a=document.querySelector("[data-correct]");
+ a.innerHTML="";
+ a.dataset.correct.split(" ").forEach(w=>{
+  const el=createWord(w);
+  a.appendChild(el);
+ });
+}
+
+function resetGame(){
+ currentIndex=0;
+ showSentence();
+}
+</script>
+
+</body>
+</html>
